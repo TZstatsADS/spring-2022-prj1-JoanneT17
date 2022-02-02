@@ -1,0 +1,348 @@
+---
+title: "How Philosophers' View Change with Time"
+author: "Shiqi Tang_st3349"
+date: "1/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+fig.align = 'center'
+```
+
+```{r load libraries, include=FALSE}
+packages.used=as.list(
+  c("tm", "tidytext", "tidyverse","tidyr", "tibble", "knitr", "ngram", "egg",
+    "sentimentr", "dplyr", "wordcloud", "RColorBrewer","broom","textdata",
+    "topicmodels", "stringr", "rvest", "syuzhet")
+)
+# check packages that need to be installed.
+packages.needed=setdiff(packages.used, 
+                        intersect(installed.packages()[,1], 
+                                  packages.used))
+# install additional packages
+if(length(packages.needed)>0){
+  install.packages(packages.needed, dependencies = TRUE)
+}
+# load packages
+library(tm)
+library(tidytext)
+library(tidyverse)
+library(tidyr)
+library(tibble)
+library(knitr)
+library(ngram)
+library(egg)
+library(sentimentr)
+library(dplyr)
+library(wordcloud)
+library(RColorBrewer)
+library(broom)
+library(textdata)
+library(topicmodels)
+library(stringr)
+library(rvest)
+library(syuzhet)
+```
+
+
+```{r read data, message=FALSE, warning=FALSE, include=FALSE}
+data <- read.csv("philosophy_data.csv", stringsAsFactors = FALSE)
+str(data)
+dim(data)
+```
+
+
+```{r text processing, echo=FALSE, message=FALSE, warning=FALSE}
+corpus <- VCorpus(VectorSource(data$sentence_str))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, c(stopwords("en"), "socrates"))%>%
+  tm_map(removeWords, character(0))
+
+# Create DTM
+data_dtm <- DocumentTermMatrix(corpus)
+# Change the DocumentTermMatrix() object into a simple matrix with as.matrix() 
+#data_dtm_m <- as.matrix(data_dtm)
+
+# Tidy up the DTM
+data_tidy <- tidy(data_dtm)
+```
+
+In this report we disscuss how philosophers' view toward the world change with time. The data set: The Philosophy Data Project contains over 300,000 sentences from over 50 texts spanning 10 major schools of philosophy. You can read more about it on https://www.kaggle.com/kouroshalizadeh/history-of-philosophy.
+
+
+After some text processing procedures, including cleaning data and removing stopwords, we can do sentiment analysis on the tidy version of texts.
+
+
+## Part 1: Are philosophers's attitude constant through time?
+
+Philosophy has been around since the dawn of western civilization. In this long run so many ideas have emerged, which may raise the question: how did these different schools of philosophy's sentiment change as time goes by?
+
+
+By answering this question in a informative way, I did a sentiment analysis using Bing lexicoc.
+
+```{r sentiment analysis using Bing lexicon, echo=FALSE, message=FALSE, warning=FALSE}
+# Get Bing lexicon
+bing <- get_sentiments("bing")
+
+data_tidy <- data_tidy %>%
+  # Set index to numeric document
+  mutate(index = as.numeric(document))
+
+data_polarity <- data_tidy %>%
+  inner_join(bing, by = c("term" = "word")) %>%
+  count(sentiment, index) %>% 
+  spread(sentiment, n, fill = 0) %>%
+  mutate(polarity = positive - negative,
+         line_number = row_number()
+  )
+
+# Plot polarity vs. index
+ggplot(data_polarity, aes(x = index, y = polarity)) + 
+  # Add a smooth trend curve
+  geom_smooth() + 
+  geom_hline(yintercept = 0, color = "red") +
+  labs(title = "Sentiment Analysis using Bing Lexicon") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+As the above plot shows, overall, philosophers went from positive to a relatively negative perspective of the world. This seems to make sense, as philosophy begins in wonder, which is why Socrates states that “the sense of wonder is the mark of the philosopher.” With wonder comes hope and goodwill, leading to a positive view. However, with the development of society and all the wars, it is plausible that people may consider the world in a negative way. 
+
+
+To have a closer look, I divided the dataset into three parts based on the original publication data of the texts: BC 350 ~ 170, 1637 ~ 1798 and 1807 ~ 1985. 
+
+
+
+```{r further sentiment analysis, echo=FALSE, message=FALSE, warning=FALSE}
+data1 <- data[data$original_publication_date <= 170,]
+data2 <- data[data$original_publication_date > 170 & data$original_publication_date <= 1798,]
+data3 <- data[data$original_publication_date > 1798,]
+
+corpus1 <- VCorpus(VectorSource(data1$sentence_str))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, c(stopwords("en"), "socrates"))%>%
+  tm_map(removeWords, character(0))
+
+corpus2 <- VCorpus(VectorSource(data2$sentence_str))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, stopwords("en"))%>%
+  tm_map(removeWords, character(0))
+
+corpus3 <- VCorpus(VectorSource(data3$sentence_str))%>%
+  tm_map(removePunctuation)%>%
+  tm_map(removeWords, stopwords("en"))%>%
+  tm_map(removeWords, character(0))
+
+data_dtm1 <- DocumentTermMatrix(corpus1)
+data_dtm2 <- DocumentTermMatrix(corpus2)
+data_dtm3 <- DocumentTermMatrix(corpus3)
+
+# Tidy up the DTM
+data_tidy1 <- tidy(data_dtm1)
+data_tidy2 <- tidy(data_dtm2)
+data_tidy3 <- tidy(data_dtm3)
+
+# Join text to lexicon
+data_bing_words1 <- inner_join(data_tidy1, bing, by = c("term" = "word"))
+data_bing_words2 <- inner_join(data_tidy2, bing, by = c("term" = "word"))
+data_bing_words3 <- inner_join(data_tidy3, bing, by = c("term" = "word"))
+
+# For period 1
+data_polarity1 <- data_tidy1 %>%
+  mutate(index = as.numeric(document)) %>%
+  inner_join(bing, by = c("term" = "word")) %>%
+  count(sentiment, index) %>% 
+  spread(sentiment, n, fill = 0) %>%
+  mutate(polarity = positive - negative,
+         line_number = row_number()
+  )
+# For period 2
+data_polarity2 <- data_tidy2 %>%
+  mutate(index = as.numeric(document)) %>%
+  inner_join(bing, by = c("term" = "word")) %>%
+  count(sentiment, index) %>% 
+  spread(sentiment, n, fill = 0) %>%
+  mutate(polarity = positive - negative,
+         line_number = row_number()
+  )
+# For period 3
+data_polarity3 <- data_tidy3 %>%
+  mutate(index = as.numeric(document)) %>%
+  inner_join(bing, by = c("term" = "word")) %>%
+  count(sentiment, index) %>% 
+  spread(sentiment, n, fill = 0) %>%
+  mutate(polarity = positive - negative,
+         line_number = row_number()
+  )
+# Draw plot
+f1.1 <- ggplot(data_polarity1, aes(x = index, y = polarity)) + 
+  geom_smooth() + 
+  geom_hline(yintercept = 0, color = "red")
+f1.2 <- ggplot(data_polarity2, aes(x = index, y = polarity)) + 
+  geom_smooth() + 
+  geom_hline(yintercept = 0, color = "red")
+f1.3 <- ggplot(data_polarity3, aes(x = index, y = polarity)) + 
+  geom_smooth() + 
+  geom_hline(yintercept = 0, color = "red")
+
+figure1 <- ggarrange(f1.1, f1.2, f1.3,
+                    labels = c("Period 1: BC 350 ~ 170", "Period 2: , 1637 ~ 1798",
+                               "Period 3: 1807 ~ 1985"),
+                    ncol = 2, nrow = 2)
+```
+
+
+From the above plot, we can see that for period 1 and period 2, i.e. before 19th century, philosophers held positive attitude. Interestingly, between 1637 and 1798, sentiment analysis on the texts show strong positivity. Again, the results go in line when we put it into the context of the development of philosophy. 17th and 18th century are known as The Age of Enlightenment, which included a range of ideas centered on the value of human happiness. 
+
+
+However, entering 19th century, philosophers seem to change their attitude, showing negativity in their texts. 
+
+## Part 2: A Cloer Look at the Emotions
+Of course, feelings are not just "positive" or "negative". Therefore, the following sentiment analysis uses NRC lexicon, which incorporates eight basic emotions (anger, fear, anticipation, trust, surprise, sadness, joy, and disgust).
+
+
+```{r sentiment analysis using NRC lexicon, echo=FALSE, message=FALSE, warning=FALSE}
+nrc <- get_sentiments("nrc")
+
+data_plutchik <- data_tidy %>% 
+  inner_join(nrc, by = c("term" = "word")) %>% 
+  filter(!sentiment %in% c("positive", "negative")) %>%
+  group_by(sentiment) %>% 
+  summarize(total_count = sum(count))
+
+ggplot(data_plutchik, aes(x = sentiment, y = total_count)) +
+  geom_col() +
+  labs(title = "Sentiment Analysis using NRC Lexicon") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+Surprisingly, "trust" is the strongest emotions among all the texts analyzed. 
+
+
+```{r further sentiment analysis using NRC lexicon, echo=FALSE, message=FALSE, warning=FALSE}
+data_plutchik1 <- data_tidy1 %>% 
+  inner_join(nrc, by = c("term" = "word")) %>% 
+  filter(!sentiment %in% c("positive", "negative")) %>%
+  group_by(sentiment) %>% 
+  summarize(total_count = sum(count))
+data_plutchik2 <- data_tidy2 %>% 
+  inner_join(nrc, by = c("term" = "word")) %>% 
+  filter(!sentiment %in% c("positive", "negative")) %>%
+  group_by(sentiment) %>% 
+  summarize(total_count = sum(count))
+data_plutchik3 <- data_tidy3 %>% 
+  inner_join(nrc, by = c("term" = "word")) %>% 
+  filter(!sentiment %in% c("positive", "negative")) %>%
+  group_by(sentiment) %>% 
+  summarize(total_count = sum(count))
+
+
+f2.1 <- ggplot(data_plutchik1, aes(x = sentiment, y = total_count)) +
+  geom_col()
+f2.2 <- ggplot(data_plutchik2, aes(x = sentiment, y = total_count)) +
+  geom_col()
+f2.3 <- ggplot(data_plutchik3, aes(x = sentiment, y = total_count)) +
+  geom_col()
+
+figure2 <- ggarrange(f2.1, f2.2, f2.3,
+                    labels = c("Period 1: BC 350 ~ 170", "Period 2: , 1637 ~ 1798",
+                               "Period 3: 1807 ~ 1985"),
+                    ncol =2, nrow = 2)
+```
+
+
+To see it across three periods, without the common features across the three period, we can tell that the emotion "fear" exceed "joy" during period 3, while period 1 and 2 showed more "joy" in their texts.
+
+
+## Part 3: How Key Words Change with Time --- Word Cloud
+Next we can take a deeper look at the key words in the texts for the three different periods.
+
+
+Word cloud from 350 BC to 170:
+```{r wordcloud1, echo=FALSE, message=FALSE, warning=FALSE}
+data_tidy_wc1 <- data_tidy1 %>%
+  mutate(sum = sum(count))
+
+wordcloud(data_tidy_wc1$term, scale=c(5,0.5),max.words=50,colors=brewer.pal(1,"Dark2"))
+```
+
+
+Here we can see the word "nature", "body", "soul" and reason" appears frequently in the texts. Indicating that philosophers in the early stage are intrigued by both nature and the way we look and talk about nature, as well as human being and reasons why they exist.
+
+
+Word cloud from 1637 ~ 1798:
+```{r wordcloud2, echo=FALSE, message=FALSE, warning=FALSE}
+data_tidy_wc2 <- data_tidy2 %>%
+  mutate(sum = sum(count))
+
+wordcloud(data_tidy_wc2$term, scale=c(5,0.5),max.words=50,colors=brewer.pal(1,"Dark2"))
+```
+
+
+Word cloud from 1807 ~ 1985:
+```{r wordcloud3, echo=FALSE, message=FALSE, warning=FALSE}
+data_tidy_wc3 <- data_tidy3 %>%
+  mutate(sum = sum(count))
+
+wordcloud(data_tidy_wc3$term, scale=c(5,0.5),max.words=50,colors=brewer.pal(1,"Dark2"))
+```
+
+
+For 19th and 20th century, words like "sense", "consciousness", "knowledge" and "existence" are mentioned more frequently.
+
+
+## Part 4: Explanation & Conclusion
+We now see how the development of philosophy shifted from positive to negative. But why?
+
+
+We know that during different time period, the dominant school of philosophy varies. During the year of 350 BC to 170, the popular schools are:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+unique(data1$school)
+```
+
+While during 17th and 18th century, the mainstream though are replace by:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+unique(data2$school)
+```
+
+
+And for 19th and 20th century, more schools emerged, they are as follows:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+unique(data3$school)
+```
+
+
+If we plot the average sentiment (polarity) of text by sentence grouped by different school, we may find some interesting insights to account for the change mentioned earlier.
+
+
+
+```{r sentiment score by school, echo=FALSE, message=FALSE, warning=FALSE}
+data_sent <- data[,c("title", "author", "school", "sentence_length", "sentence_lowered")]
+sentscore <- sentiment(data_sent$sentence_lowered)
+sentscore <- sentscore[sentscore$sentence_id == 1, "sentiment"]
+data_sent$score <- sentscore[[1]]
+
+score_school_df <- data.frame(school = unique(data_sent$school))
+score_school <- c()
+for (i in 1:length(unique(data_sent$school))) {
+  score_school[i] <- mean(data_sent[data_sent$school == unique(data_sent$school)[i], "score"])
+}
+score_school_df$score <- score_school
+
+# Draw plot
+ggplot(data = score_school_df, aes(x = school, y = score, fill = score)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text = element_text(angle = 90, hjust = 1, vjust = .5),
+        plot.title = element_text(hjust = .5)) +
+  labs(title = "Sentiment Analysis by School", ylab = "Mean of Score") 
+```
+
+
+The graph clearly shows that schools such as "analytic", "continental", "communism" , "nietzsche", which emerged mainly in 19th and 20th century exhibit low mean score. And "german_idealism" has high mean score of sentiment, which appears in the 18th century. 
+
+
+To conclude, in the development of philosophy, people started by looking with wonder at ourselves and the world around us, being intrigued by both nature and the way we look and talk about nature. This lead to the positivity reflected in the texts by philosophers. As the society developed, people got wealthier and less worried about food or shelter, they begin to worry more about the invisible things. Also, with more wars taken place (e.g. first world war during 1914-1918), we can see a trend of negativity in the history of philosophy. 
+
+
